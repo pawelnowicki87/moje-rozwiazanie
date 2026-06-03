@@ -8,10 +8,9 @@ main();
 
 async function main() {
     const db = await setupDb();
-    const app = await setupApp();
+    const app = await setupApp(db);
 
     app.listen(PORT, () => {
         console.log(`[server]: Server is running at http://localhost:${PORT}`);
     });
-};
-
+}
