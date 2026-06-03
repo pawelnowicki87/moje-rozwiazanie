@@ -1,0 +1,17 @@
+CREATE TABLE Recruiter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT,
+    company TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE JobOffer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    salary_range TEXT,
+    location TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

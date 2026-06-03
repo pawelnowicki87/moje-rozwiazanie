@@ -1,0 +1,8 @@
+services:
+  legacy-api:
+    build:
+      context: ./legacy-api
+    container_name: legacy-api
+    restart: always
+    ports:
+      - "4040:4040"
