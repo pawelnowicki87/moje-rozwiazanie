@@ -23,11 +23,21 @@ describe('POST /candidates', () => {
 
         const res = await request(app)
             .post('/candidates')
-            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan@test.com' });
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan@test.com', jobOfferIds: [1] });
 
         expect(res.status).toBe(201);
         expect(res.body.message).toBe('Candidate added successfully');
         expect(res.body.candidate.email).toBe('jan@test.com');
+    });
+
+    it('should create a candidate with multiple job offers', async () => {
+        mockFetch.mockResolvedValueOnce({ status: 201 });
+
+        const res = await request(app)
+            .post('/candidates')
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan2@test.com', jobOfferIds: [1, 2] });
+
+        expect(res.status).toBe(201);
     });
 
     it('should return 400 when required fields are missing', async () => {
@@ -38,15 +48,45 @@ describe('POST /candidates', () => {
         expect(res.status).toBe(400);
         expect(res.body.errors).toContain('Last name is required');
         expect(res.body.errors).toContain('Email is required');
+        expect(res.body.errors).toContain('At least one job offer is required');
+    });
+
+    it('should return 400 when jobOfferIds is empty', async () => {
+        const res = await request(app)
+            .post('/candidates')
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan@test.com', jobOfferIds: [] });
+
+        expect(res.status).toBe(400);
+        expect(res.body.errors).toContain('At least one job offer is required');
     });
 
     it('should return 400 for invalid email format', async () => {
         const res = await request(app)
             .post('/candidates')
-            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'not-an-email' });
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'not-an-email', jobOfferIds: [1] });
 
         expect(res.status).toBe(400);
         expect(res.body.errors).toContain('Invalid email format');
+    });
+
+    it('should return 400 for non-existing job offer', async () => {
+        mockFetch.mockResolvedValueOnce({ status: 201 });
+
+        const res = await request(app)
+            .post('/candidates')
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan@test.com', jobOfferIds: [9999] });
+
+        expect(res.status).toBe(400);
+        expect(res.body.errors).toContain('One or more job offer IDs do not exist');
+    });
+
+    it('should return 400 for invalid status', async () => {
+        const res = await request(app)
+            .post('/candidates')
+            .send({ firstName: 'Jan', lastName: 'Kowalski', email: 'jan@test.com', jobOfferIds: [1], status: 'nieznany' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.errors).toContain('Invalid status');
     });
 
     it('should return 409 when candidate already exists', async () => {
@@ -54,7 +94,7 @@ describe('POST /candidates', () => {
 
         const res = await request(app)
             .post('/candidates')
-            .send({ firstName: 'Anna', lastName: 'Nowak', email: 'anna@test.com' });
+            .send({ firstName: 'Anna', lastName: 'Nowak', email: 'anna@test.com', jobOfferIds: [1] });
 
         expect(res.status).toBe(409);
         expect(res.body.message).toBe('Candidate with this email already exists.');
@@ -67,7 +107,7 @@ describe('POST /candidates', () => {
 
         const res = await request(app)
             .post('/candidates')
-            .send({ firstName: 'Piotr', lastName: 'Zając', email: 'piotr@test.com' });
+            .send({ firstName: 'Piotr', lastName: 'Zając', email: 'piotr@test.com', jobOfferIds: [1] });
 
         expect(res.status).toBe(201);
         expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -78,7 +118,7 @@ describe('POST /candidates', () => {
 
         const res = await request(app)
             .post('/candidates')
-            .send({ firstName: 'Maria', lastName: 'Wiśniewska', email: 'maria@test.com' });
+            .send({ firstName: 'Maria', lastName: 'Wiśniewska', email: 'maria@test.com', jobOfferIds: [1] });
 
         expect(res.status).toBe(504);
         expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -93,9 +133,19 @@ describe('GET /candidates', () => {
         app = await setupApp(db);
     });
 
-    it('should return candidates list', async () => {
+    it('should return candidates list with pagination', async () => {
         const res = await request(app).get('/candidates');
         expect(res.status).toBe(200);
-        expect(Array.isArray(res.body)).toBe(true);
+        expect(Array.isArray(res.body.data)).toBe(true);
+        expect(res.body.pagination).toBeDefined();
+        expect(res.body.pagination.page).toBe(1);
+        expect(res.body.pagination.limit).toBe(20);
+    });
+
+    it('should respect page and limit query params', async () => {
+        const res = await request(app).get('/candidates?page=2&limit=5');
+        expect(res.status).toBe(200);
+        expect(res.body.pagination.page).toBe(2);
+        expect(res.body.pagination.limit).toBe(5);
     });
 });

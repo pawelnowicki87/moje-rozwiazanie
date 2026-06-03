@@ -10,7 +10,15 @@ interface CandidateBody {
     firstName: string;
     lastName: string;
     email: string;
+    phone?: string;
+    experienceYears?: number;
+    notes?: string;
+    status?: string;
+    consentDate?: string;
+    jobOfferIds: number[];
 }
+
+const VALID_STATUSES = ['nowy', 'w trakcie rozmów', 'zaakceptowany', 'odrzucony'];
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -20,6 +28,8 @@ const validateCandidate = (body: Partial<CandidateBody>): string[] => {
     if (!body.lastName) errors.push('Last name is required');
     if (!body.email) errors.push('Email is required');
     if (body.email && !/\S+@\S+\.\S+/.test(body.email)) errors.push('Invalid email format');
+    if (!body.jobOfferIds || body.jobOfferIds.length === 0) errors.push('At least one job offer is required');
+    if (body.status && !VALID_STATUSES.includes(body.status)) errors.push('Invalid status');
     return errors;
 };
 
@@ -33,9 +43,23 @@ export class CandidatesController {
         this.router.post('/candidates', this.create.bind(this));
     }
 
-    async getAll(_req: Request, res: Response) {
-        const candidates = await this.db.all('SELECT * FROM Candidate');
-        res.json(candidates);
+    async getAll(req: Request, res: Response) {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const offset = (page - 1) * limit;
+
+        const total = await this.db.get('SELECT COUNT(*) as count FROM Candidate');
+        const candidates = await this.db.all('SELECT * FROM Candidate LIMIT ? OFFSET ?', [limit, offset]);
+
+        res.json({
+            data: candidates,
+            pagination: {
+                page,
+                limit,
+                total: total!.count,
+                totalPages: Math.ceil(total!.count / limit),
+            },
+        });
     }
 
     async create(req: Request, res: Response) {
@@ -47,7 +71,16 @@ export class CandidatesController {
             return;
         }
 
-        const { firstName, lastName, email } = body as CandidateBody;
+        const { firstName, lastName, email, phone, experienceYears, notes, status, consentDate, jobOfferIds } = body as CandidateBody;
+
+        const jobOffers = await Promise.all(
+            jobOfferIds.map(id => this.db.get('SELECT id FROM JobOffer WHERE id = ?', [id]))
+        );
+        const missingOffers = jobOffers.some(offer => !offer);
+        if (missingOffers) {
+            res.status(400).json({ message: 'Validation failed', errors: ['One or more job offer IDs do not exist'] });
+            return;
+        }
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             if (attempt > 0) {
@@ -80,14 +113,24 @@ export class CandidatesController {
                 }
 
                 if (legacyRes.status === 201) {
-                    await this.db.run(
-                        'INSERT INTO Candidate (first_name, last_name, email) VALUES (?, ?, ?)',
-                        [firstName, lastName, email]
+                    const result = await this.db.run(
+                        `INSERT INTO Candidate (first_name, last_name, email, phone, experience_years, notes, status, consent_date)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [firstName, lastName, email, phone ?? null, experienceYears ?? null, notes ?? null, status ?? 'nowy', consentDate ?? null]
                     );
 
+                    const candidateId = result.lastID!;
+
+                    for (const jobOfferId of jobOfferIds) {
+                        await this.db.run(
+                            'INSERT INTO CandidateJobOffer (candidate_id, job_offer_id) VALUES (?, ?)',
+                            [candidateId, jobOfferId]
+                        );
+                    }
+
                     const candidate = await this.db.get(
-                        'SELECT * FROM Candidate WHERE email = ?',
-                        [email]
+                        'SELECT * FROM Candidate WHERE id = ?',
+                        [candidateId]
                     );
 
                     res.status(201).json({ message: 'Candidate added successfully', candidate });
